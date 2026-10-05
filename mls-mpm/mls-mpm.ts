@@ -42,6 +42,7 @@ export class MLSMPMSimulator {
     p2g2BindGroup: GPUBindGroup
     p2gDensityBindGroup: GPUBindGroup
     updateGridBindGroup: GPUBindGroup
+    private updateGridBindGroupEntries: GPUBindGroupEntry[]
     g2pBindGroup: GPUBindGroup
     copyPositionBindGroup: GPUBindGroup
 
@@ -284,9 +285,7 @@ export class MLSMPMSimulator {
                 { binding: 4, resource: { buffer: densityGridSizeBuffer }}
             ]
         })
-        this.updateGridBindGroup = device.createBindGroup({
-            layout: this.updateGridPipeline.getBindGroupLayout(0),
-            entries: [
+        this.updateGridBindGroupEntries = [
                 { binding: 0, resource: { buffer: cellBuffer }},
                 { binding: 1, resource: { buffer: this.realBoxSizeBuffer }},
                 { binding: 2, resource: { buffer: initBoxSizeBuffer }},
@@ -294,8 +293,8 @@ export class MLSMPMSimulator {
                 { binding: 4, resource: depthMapTextureView }, 
                 { binding: 5, resource: { buffer: this.mouseInfoUniformBuffer }}, 
                 { binding: 6, resource: { buffer: this.dtBuffer }}, 
-            ],
-        })
+        ];
+        this.updateViewport(depthMapTextureView, canvas);
         this.g2pBindGroup = device.createBindGroup({
             layout: this.g2pPipeline.getBindGroupLayout(0),
             entries: [
@@ -318,6 +317,15 @@ export class MLSMPMSimulator {
 
         this.particleBuffer = particleBuffer
         this.densityGridBuffer = densityGridBuffer
+    }
+
+    updateViewport(depthMapTextureView: GPUTextureView, canvas: HTMLCanvasElement) {
+        this.mouseInfoViews.screenSize.set([canvas.width, canvas.height]);
+        this.updateGridBindGroupEntries[4].resource = depthMapTextureView;
+        this.updateGridBindGroup = this.device.createBindGroup({
+            layout: this.updateGridPipeline.getBindGroupLayout(0),
+            entries: this.updateGridBindGroupEntries,
+        });
     }
 
     initDambreak(initBoxSize: number[], numParticles: number) {

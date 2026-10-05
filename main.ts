@@ -6,6 +6,14 @@ import GUI from 'lil-gui';
 
 /// <reference types="@webgpu/types" />
 
+function resizeCanvas(canvas: HTMLCanvasElement) {
+	const width = Math.max(1, Math.floor(0.7 * canvas.clientWidth));
+	const height = Math.max(1, Math.floor(0.7 * canvas.clientHeight));
+	if (canvas.width === width && canvas.height === height) return false;
+	canvas.width = width;
+	canvas.height = height;
+	return true;
+}
 
 async function init() {
 	const canvas: HTMLCanvasElement = document.querySelector('canvas')!
@@ -38,9 +46,7 @@ async function init() {
 		throw new Error()	
 	}
 
-	let devicePixelRatio  = 0.7;
-	canvas.width = devicePixelRatio * canvas.clientWidth
-	canvas.height = devicePixelRatio * canvas.clientHeight
+	resizeCanvas(canvas);
 
 	console.log(canvas.width, canvas.height)
 
@@ -163,17 +169,16 @@ async function main() {
 	interface simulationParam {
 		particleCount: number, 
 		initBoxSize: number[], 
-		initDistance: number, 
 		mouseRadius: number,
 		cameraTargetY: number, 
 		guiText: string, 
 	}
 
 	let simulationParams: simulationParam[] = [
-		{ particleCount: 40000, initBoxSize: [60, 50, 60], initDistance: 50, mouseRadius: 15, cameraTargetY: 10, guiText: 'Small (40,000 particles)' }, 
-		{ particleCount: 70000, initBoxSize: [70, 50, 70], initDistance: 60, mouseRadius: 15, cameraTargetY: 12, guiText: 'Medium (70,000 particles)'}, 
-		{ particleCount: 100000, initBoxSize: [80, 70, 80], initDistance: 70, mouseRadius: 15, cameraTargetY: 12, guiText: 'Large (100,000 particles)'}, 
-		{ particleCount: 180000, initBoxSize: [90, 70, 90], initDistance: 80, mouseRadius: 18, cameraTargetY: 15, guiText: 'Very Large (180,000 particles)'}, 
+		{ particleCount: 40000, initBoxSize: [60, 50, 60], mouseRadius: 15, cameraTargetY: 10, guiText: 'Small (40,000 particles)' },
+		{ particleCount: 70000, initBoxSize: [70, 50, 70], mouseRadius: 15, cameraTargetY: 12, guiText: 'Medium (70,000 particles)'},
+		{ particleCount: 100000, initBoxSize: [80, 70, 80], mouseRadius: 15, cameraTargetY: 12, guiText: 'Large (100,000 particles)'},
+		{ particleCount: 180000, initBoxSize: [90, 70, 90], mouseRadius: 18, cameraTargetY: 15, guiText: 'Very Large (180,000 particles)'},
 	]
 	const particleCountTexts = simulationParams.map(param => param.guiText)
 	const guiParams = initGui(particleCountTexts)
@@ -204,13 +209,15 @@ async function main() {
 	})
 
 	// texture for depthmap
-	const depthMapTexture = device.createTexture({
+	const createDepthMapTexture = () => device.createTexture({
 		label: 'depth map texture', 
 		size: [canvas.width, canvas.height, 1],
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
 		format: 'r32float',
 	});
-	const depthMapTextureView = depthMapTexture.createView()
+	let depthMapTexture = createDepthMapTexture();
+	let depthMapTextureView = depthMapTexture.createView();
+	let depthMapNeedsClear = true;
 
 	// texture for density grid
 	// const densityGridSizeX = Math.ceil(Math.max(...simulationParams.map(param => param.initBoxSize[0])) / 64) * 64; // コピーのために切り上げ
@@ -247,7 +254,7 @@ async function main() {
 
 	const canvasElement = document.getElementById("fluidCanvas") as HTMLCanvasElement;
 	// シミュレーション，カメラの初期化
-	const mlsmpmFov = 60 * Math.PI / 180
+	const mlsmpmFov = 40 * Math.PI / 180
 	const mlsmpmRadius = 0.6
 	const mlsmpmDiameter = 2 * mlsmpmRadius
 	const mlsmpmZoomRate = 0.7
@@ -258,7 +265,7 @@ async function main() {
 		device, depthMapTextureView, canvas, 
 		maxGridCount, maxParticleCount, fixedPointMultiplier, mlsmpmDiameter
 	)
-	const mlsmpmRenderer = new FluidRenderer(
+	const createRenderer = () => new FluidRenderer(
 		renderUniformBuffer, posvelBuffer, densityGridSizeBuffer, initBoxSizeBuffer, 
 		device, 
 		depthMapTextureView, cubemapTextureView, densityGridTextureView, 
@@ -266,6 +273,7 @@ async function main() {
 		presentationFormat, 
 		mlsmpmRadius, mlsmpmFov, fixedPointMultiplier
 	)
+	let mlsmpmRenderer = createRenderer();
 
 	console.log("simulator initialization done")
 
@@ -294,6 +302,19 @@ async function main() {
 
 	
 	async function frame() {
+		if (resizeCanvas(canvas)) {
+			// Render targets and shader dimensions must change together; particle state stays in the simulator.
+			const previousDepthMapTexture = depthMapTexture;
+			const previousRenderer = mlsmpmRenderer;
+			depthMapTexture = createDepthMapTexture();
+			depthMapTextureView = depthMapTexture.createView();
+			mlsmpmRenderer = createRenderer();
+			mlsmpmSimulator.updateViewport(depthMapTextureView, canvas);
+			depthMapNeedsClear = true;
+			previousRenderer.destroy();
+			previousDepthMapTexture.destroy();
+		}
+
 		const selectedValue = particleCountTexts.indexOf(guiParams.numParticles);
 		if ((guiParams.running && Number(selectedValue) != paramsIdx) || guiParams.resetRequested) {
 			guiParams.resetRequested = false;
@@ -303,7 +324,7 @@ async function main() {
 			simulationParam = simulationParams[paramsIdx]
 			initBoxSize = simulationParam.initBoxSize
 			mlsmpmSimulator.reset(initBoxSize, simulationParam.particleCount)
-			camera.reset(simulationParam.initDistance, [initBoxSize[0] / 2, simulationParam.cameraTargetY, initBoxSize[2] / 2], 
+			camera.reset(initBoxSize, [initBoxSize[0] / 2, simulationParam.cameraTargetY, initBoxSize[2] / 2],
 				mlsmpmFov, mlsmpmZoomRate)
 			realBoxSize = [...initBoxSize]
 			let slider = document.getElementById("slider") as HTMLInputElement
@@ -331,11 +352,22 @@ async function main() {
 		mlsmpmSimulator.changeBoxSize(realBoxSize)
 
 		// matrices are written by camera.ts
+		camera.updateViewport();
 		renderUniformsViews.texelSize.set([1.0 / canvas.width, 1.0 / canvas.height]);
 		renderUniformsViews.sphereSize.set([mlsmpmDiameter])
 		device.queue.writeBuffer(renderUniformBuffer, 0, renderUniformsValues) 
 
 		const commandEncoder = device.createCommandEncoder()
+		if (depthMapNeedsClear) {
+			// The simulation reads the previous depth map; a new target has no valid surface yet.
+			const depthClearPass = commandEncoder.beginRenderPass({ colorAttachments: [{
+				view: depthMapTextureView,
+				clearValue: { r: 1e6, g: 0.0, b: 0.0, a: 1.0 },
+				loadOp: 'clear', storeOp: 'store',
+			}] });
+			depthClearPass.end();
+			depthMapNeedsClear = false;
+		}
 
 		let maxDt = 0.4;
 		mlsmpmSimulator.execute(commandEncoder, 

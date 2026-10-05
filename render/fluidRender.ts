@@ -42,6 +42,8 @@ export class FluidRenderer {
     densityGridSizeBuffer: GPUBuffer
 
     device: GPUDevice
+    private textures: GPUTexture[]
+    private buffers: GPUBuffer[]
 
     constructor(
         renderUniformBuffer: GPUBuffer, posvelBuffer: GPUBuffer, densityGridSizeBuffer: GPUBuffer, initBoxSizeBuffer: GPUBuffer, 
@@ -55,8 +57,8 @@ export class FluidRenderer {
         const maxFilterSize = 50
         const diameter = 2 * radius
         const blurFilterSize = 12
-        const thicknessTextureWidth = canvas.width / 2;
-        const thicknessTextureHeight = canvas.height / 2;
+        const thicknessTextureWidth = Math.max(1, Math.floor(canvas.width / 2));
+        const thicknessTextureHeight = Math.max(1, Math.floor(canvas.height / 2));
 
         const screenConstants = {
             'screenHeight': canvas.height, 
@@ -306,6 +308,7 @@ export class FluidRenderer {
             format: presentationFormat,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         })
+        this.textures = [tmpDepthMapTexture, thicknessTexture, tmpThicknessTexture, depthTestTexture, tmpOutputTexture];
         this.depthMapTextureView = depthMapTextureView
         this.tmpDepthMapTextureView = tmpDepthMapTexture.createView()
         this.thicknessTextureView = thicknessTexture.createView()
@@ -339,6 +342,7 @@ export class FluidRenderer {
             size: 4, 
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
+        this.buffers = [filterXUniformBuffer, filterYUniformBuffer, thicknessFilterSizeBuffer, this.diffuseColorBuffer, this.colorDensityBuffer];
         this.densityGridSizeBuffer = densityGridSizeBuffer
         let filterXArray = new Float32Array([1., 0.])
         let filterYArray = new Float32Array([0., 1.])
@@ -479,6 +483,10 @@ export class FluidRenderer {
         console.log(this.densityRaymarchPipeline.getBindGroupLayout(0))
     }
 
+    destroy() {
+        this.textures.forEach(texture => texture.destroy());
+        this.buffers.forEach(buffer => buffer.destroy());
+    }
 
     execute(context: GPUCanvasContext, commandEncoder: GPUCommandEncoder, 
         numParticles: number, sphereRenderFl: boolean, diffuseColor: number[], colorDensity: number

@@ -25,8 +25,11 @@ export class Camera {
     minYTheta: number
     sensitivity: number
     currentDistance: number
+    defaultDistance: number
     maxDistance: number
     minDistance: number
+    frameSize: number[]
+    aspect: number
     target: number[]
     fov: number
     zoomRate: number
@@ -49,6 +52,7 @@ export class Camera {
             if (this.currentDistance < this.minDistance) this.currentDistance = this.minDistance;
             if (this.currentDistance > this.maxDistance) this.currentDistance = this.maxDistance;  
             this.recalculateView()
+            this.setNewPrevMouseCoord()
         })
 
         this.canvas.addEventListener("mousemove", (event: MouseEvent) => {
@@ -67,6 +71,7 @@ export class Camera {
                 this.prevX = event.clientX;
                 this.prevY = event.clientY;
                 this.recalculateView()
+                this.setNewPrevMouseCoord()
             }
         });
         
@@ -81,7 +86,7 @@ export class Camera {
         });
     }
 
-    reset(initDistance: number, target: number[], fov: number, zoomRate: number) {
+    reset(boxSize: number[], target: number[], fov: number, zoomRate: number) {
         this.isDragging = false
         this.pointerInside = false
         this.currentHoverX = this.currentHoverY = -1
@@ -89,23 +94,38 @@ export class Camera {
         this.prevX = 0
         this.prevY = 0
         this.currentXtheta = -Math.PI / 2 * 1
-        this.currentYtheta = -Math.PI / 12 * 0.8
-        // this.currentYtheta = 0
         this.maxYTheta = -Math.PI / 12. * 0.8
-        this.minYTheta = -0.99 * Math.PI / 2.
+        this.minYTheta = -Math.PI / 2.
+        this.currentYtheta = this.minYTheta
         this.sensitivity = 0.005
-        this.currentDistance = initDistance
-        this.maxDistance = 1.3 * this.currentDistance
-        this.minDistance = 0.8 * this.currentDistance
+        this.defaultDistance = 0
+        this.currentDistance = 0
+        this.aspect = 0
+        // Existing particle walls are [3, boxSize - 4]. At this azimuth Z is screen width.
+        this.frameSize = [boxSize[2] - 7, boxSize[0] - 7]
         this.target = target
         this.fov = fov
         this.zoomRate = zoomRate
+        this.updateViewport()
+    }
 
-        const aspect = this.canvas.clientWidth / this.canvas.clientHeight
-        const projection = mat4.perspective(fov, aspect, 0.1, 300) 
+    updateViewport() {
+        const aspect = Math.max(this.canvas.clientWidth, 1) / Math.max(this.canvas.clientHeight, 1)
+        if (aspect === this.aspect) return
+
+        const zoom = this.defaultDistance ? this.currentDistance / this.defaultDistance : 1
+        this.aspect = aspect
+        // Cover the bed with a small crop, keeping the same world scale on both screen axes.
+        this.defaultDistance = 0.96 * Math.min(this.frameSize[0] / aspect, this.frameSize[1]) / (2 * Math.tan(this.fov / 2))
+        this.currentDistance = this.defaultDistance * zoom
+        this.maxDistance = 1.3 * this.defaultDistance
+        this.minDistance = 0.8 * this.defaultDistance
+
+        const projection = mat4.perspective(this.fov, aspect, 0.1, 300)
         renderUniformsViews.projectionMatrix.set(projection)
         renderUniformsViews.invProjectionMatrix.set(mat4.inverse(projection))
         this.recalculateView()
+        this.setNewPrevMouseCoord()
     }
 
     recalculateView() {
@@ -114,18 +134,9 @@ export class Camera {
         mat4.rotateY(mat, this.currentXtheta, mat)
         mat4.rotateX(mat, this.currentYtheta, mat)
         mat4.translate(mat, [0, 0, this.currentDistance], mat)
-        var position = mat4.multiply(mat, [0, 0, 0, 1])
-
-        let target = this.target;
-
-        const view = mat4.lookAt(
-            [position[0], position[1], position[2]], // position
-            target, // target
-            [0, 1, 0], // up
-        )
-
-        renderUniformsViews.viewMatrix.set(view)
-        renderUniformsViews.invViewMatrix.set(mat4.inverse(view))
+        // The orbit transform defines up even at the overhead pole, where lookAt's world-up degenerates.
+        renderUniformsViews.viewMatrix.set(mat4.inverse(mat))
+        renderUniformsViews.invViewMatrix.set(mat)
     }
 
     calcMouseVelocity() {
