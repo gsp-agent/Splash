@@ -58,6 +58,12 @@ function initGui(particleCountTexts: string[]) {
 	const gui = new GUI();
 
 	const params = {
+		viscosity: 1.0,
+		resetRequested: false,
+		resetFluid: () => { params.resetRequested = true; params.running = true; },
+		water: () => { params.viscosity = 0.1; },
+		syrup: () => { params.viscosity = 1.0; },
+		thick: () => { params.viscosity = 4.0; },
 		sigma: 1.3,
 		running: true,
 		r: 140, 
@@ -71,11 +77,17 @@ function initGui(particleCountTexts: string[]) {
 		}
 	};	
 
+	const materialFolder = gui.addFolder('Fluid thickness');
+	materialFolder.add(params, 'viscosity', 0.1, 4, 0.1).name('Viscosity (relative)').listen();
+	materialFolder.add(params, 'water').name('Water · 1×');
+	materialFolder.add(params, 'syrup').name('Syrup · 10×');
+	materialFolder.add(params, 'thick').name('Thick · 40×');
+	materialFolder.add(params, 'resetFluid').name('Reset fluid');
 	const numParticlesFolder = gui.addFolder('Number of Particles');
 	numParticlesFolder.add(params, 'numParticles', particleCountTexts)
   		.name('Number of Particles')
 	const speedFolder = gui.addFolder('Speed');
-	speedFolder.add(params, 'speed', 0.3, 1.0, 0.1).name('Simlation Speed')
+	speedFolder.add(params, 'speed', 0.3, 1.0, 0.1).name('Simulation Speed')
 	const colorFolder = gui.addFolder('Diffuse Color');
 	colorFolder.add(params, 'r', 0, 255, 1).name('R')
 	colorFolder.add(params, 'g', 0, 255, 1).name('G')
@@ -282,7 +294,10 @@ async function main() {
 	
 	async function frame() {
 		const selectedValue = particleCountTexts.indexOf(guiParams.numParticles);
-		if (guiParams.running && Number(selectedValue) != paramsIdx) {
+		if ((guiParams.running && Number(selectedValue) != paramsIdx) || guiParams.resetRequested) {
+			guiParams.resetRequested = false;
+			boxWidthRatio = 1;
+			closingSpeed = prevClosingSpeed = 0;
 			paramsIdx = Number(selectedValue)
 			simulationParam = simulationParams[paramsIdx]
 			initBoxSize = simulationParam.initBoxSize
@@ -325,7 +340,7 @@ async function main() {
 		mlsmpmSimulator.execute(commandEncoder, 
 			[camera.currentHoverX / canvas.clientWidth, camera.currentHoverY / canvas.clientHeight], 
 			camera.calcMouseVelocity(), simulationParam.mouseRadius, sphereRenderFl, maxDt * guiParams.speed, guiParams.running,
-			densityGridSize
+			densityGridSize, guiParams.viscosity
 		)	
 		let normalizedDiffuseColor = [guiParams.r / 255, guiParams.g / 255, guiParams.b / 255];
 		mlsmpmRenderer.execute(context, commandEncoder, mlsmpmSimulator.numParticles, sphereRenderFl, normalizedDiffuseColor, 

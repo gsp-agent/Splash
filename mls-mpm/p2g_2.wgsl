@@ -14,7 +14,7 @@ override fixedPointMultiplier: f32;
 override fixedPointMultiplierInverse: f32; 
 override stiffness: f32;
 override restDensity: f32;
-override dynamicViscosity: f32;
+
 
 fn encodeFixedPoint(floatingPoint: f32) -> i32 {
 	return i32(floatingPoint * fixedPointMultiplier);
@@ -29,6 +29,7 @@ fn decodeFixedPoint(fixedPoint: i32) -> f32 {
 @group(0) @binding(3) var<uniform> numParticles: u32;
 @group(0) @binding(4) var<storage, read_write> densities: array<f32>;
 @group(0) @binding(5) var<uniform> dt: f32;
+@group(0) @binding(6) var<uniform> dynamicViscosity: f32;
 
 @compute @workgroup_size(64)
 fn p2g_2(@builtin(global_invocation_id) id: vec3<u32>) {

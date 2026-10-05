@@ -1,3 +1,4 @@
+import { viscositySteps } from './viscosity'
 import clearGrid from './clearGrid.wgsl'
 import p2g_1 from './p2g_1.wgsl'
 import p2g_2 from './p2g_2.wgsl'
@@ -45,6 +46,7 @@ export class MLSMPMSimulator {
     copyPositionBindGroup: GPUBindGroup
 
     particleBuffer: GPUBuffer
+    viscosityBuffer: GPUBuffer
     dtBuffer: GPUBuffer
     densityGridBuffer: GPUBuffer
 
@@ -97,7 +99,6 @@ export class MLSMPMSimulator {
         const constants = {
             stiffness: 50., 
             restDensity: this.restDensity, 
-            dynamicViscosity: 0.1, 
             fixedPointMultiplier: fixedPointMultiplier, 
             fixedPointMultiplierInverse: (1.0 / fixedPointMultiplier), 
         }
@@ -146,7 +147,6 @@ export class MLSMPMSimulator {
                     'fixedPointMultiplierInverse': constants.fixedPointMultiplierInverse, 
                     'stiffness': constants.stiffness, 
                     'restDensity': constants.restDensity, 
-                    'dynamicViscosity': constants.dynamicViscosity, 
                 }, 
             }
         })
@@ -219,6 +219,10 @@ export class MLSMPMSimulator {
             size: 4, // 1 x f32
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
+        this.viscosityBuffer = device.createBuffer({
+            label: 'viscosity buffer', size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        })
         this.dtBuffer = device.createBuffer({
             label: 'dt buffer', 
             size: 4, // 1 x f32
@@ -266,7 +270,8 @@ export class MLSMPMSimulator {
                 { binding: 2, resource: { buffer: initBoxSizeBuffer }}, 
                 { binding: 3, resource: { buffer: this.numParticlesBuffer }}, 
                 { binding: 4, resource: { buffer: this.densityBuffer }}, 
-                { binding: 5, resource: { buffer: this.dtBuffer }}, 
+                { binding: 5, resource: { buffer: this.dtBuffer }},
+                { binding: 6, resource: { buffer: this.viscosityBuffer }},
             ]
         })
         this.p2gDensityBindGroup = device.createBindGroup({
@@ -368,22 +373,24 @@ export class MLSMPMSimulator {
     }
 
     execute(commandEncoder: GPUCommandEncoder, mouseCoord: number[], mouseVel: number[], mouseRadius: number, 
-        densityGridFlag: boolean, dt: number, running: boolean, densityGridSize: number[]
+        densityGridFlag: boolean, dt: number, running: boolean, densityGridSize: number[], viscosity = 0.1
     ) { 
+        const step = viscositySteps(viscosity, dt);
         const computePass = commandEncoder.beginComputePass();
 
         this.mouseInfoViews.mouseCoord.set([mouseCoord[0], mouseCoord[1]])
-        this.mouseInfoViews.mouseVel.set([mouseVel[0], mouseVel[1]])
+        this.mouseInfoViews.mouseVel.set([mouseVel[0] * step.impulseScale, mouseVel[1] * step.impulseScale])
         this.mouseInfoViews.mouseRadius.set([mouseRadius])
         this.device.queue.writeBuffer(this.mouseInfoUniformBuffer, 0, this.mouseInfoValues);
 
-        const dtArray = new Float32Array([dt])
+        this.device.queue.writeBuffer(this.viscosityBuffer, 0, new Float32Array([step.viscosity]));
+        const dtArray = new Float32Array([step.dt])
         this.device.queue.writeBuffer(this.dtBuffer, 0, dtArray)
 
 
         if (!densityGridFlag) { // 通常
             if (running) {
-                for (let i = 0; i < 1; i++) {  // single timestep!!!
+                for (let i = 0; i < step.count; i++) {
                     computePass.setBindGroup(0, this.clearGridBindGroup);
                     computePass.setPipeline(this.clearGridPipeline);
                     computePass.dispatchWorkgroups(Math.ceil(this.gridCount / 64)) 
@@ -406,7 +413,7 @@ export class MLSMPMSimulator {
             }
         } else { // density grid を更新する場合
             if (running) {
-                for (let i = 0; i < 1; i++) {  // single timestep!!!
+                for (let i = 0; i < step.count; i++) {
                     computePass.setBindGroup(0, this.clearGridBindGroup);
                     computePass.setPipeline(this.clearGridPipeline);
                     computePass.dispatchWorkgroups(Math.ceil(this.gridCount / 64)) 
