@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Splash — Viscosity study</title>
+    <title>GrooveTech Prototype — Clay study</title>
     <style>
       body, html {
         height: 100%;
@@ -14,6 +14,9 @@
         align-items: center;
         overscroll-behavior: none; 
         overflow: hidden; 
+        background: #d2d2d2;
+        color: #292929;
+        font-family: Arial, Helvetica, sans-serif;
       }
       
       canvas {
@@ -21,12 +24,35 @@
         height: 100%;
       }
 
+      #brand {
+        position: fixed;
+        top: 28px;
+        left: 28px;
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      #brand img {
+        display: block;
+        width: 160px;
+        height: auto;
+      }
+
+      #brand p {
+        margin: 15px 0 0;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        white-space: nowrap;
+      }
+
       #ui-container {
         position: fixed; 
-        top: 0; 
-        left: 0; 
+        top: 185px;
+        left: 28px;
         width: 300px; 
-        margin: 20px; 
+        font-size: 13px;
+        line-height: 1.8;
       }
 
       #number-container {
@@ -65,10 +91,40 @@
       * {
         user-select: none; 
       }
+
+      @media (max-width: 640px) {
+        #brand {
+          top: 20px;
+          left: 20px;
+        }
+        #brand img {
+          width: 116px;
+        }
+        #brand p {
+          margin-top: 12px;
+          font-size: 9px;
+          letter-spacing: 1.5px;
+        }
+        #ui-container {
+          top: 140px;
+          left: 20px;
+          width: calc(100% - 40px);
+        }
+        .lil-gui.root {
+          top: 215px;
+          right: 20px;
+          max-height: calc(100dvh - 370px);
+          max-width: calc(100vw - 40px);
+        }
+      }
     </style>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
   </head>
   <body>
+    <header id="brand">
+      <img src="./GJ-logo-stacked-BLACK.svg" alt="Groove Jones" width="241" height="154" />
+      <p>GROOVETECH PROTOTYPE</p>
+    </header>
     <div id="ui-container">
       <div style="display: flex; flex-direction: column;">
         <label>

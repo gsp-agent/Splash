@@ -20,6 +20,8 @@ The Fluid thickness folder provides a live relative viscosity slider and three p
 
 These are exploratory names, not measured real-world viscosities. Select a preset, then Reset fluid to compare a fresh collapse and stir with the pointer. Reset resumes the simulation and restores the full container width. Presets leave color and simulation speed unchanged.
 
+The visual default is warm tan clay (RGB 190, 151, 114; color density 2.4), with diffuse scattering, soft satin highlights, and transmission limited to thin edges. The stacked Groove Jones SVG comes from the partner logo source folder. The visible studio uses a neutral gray gradient with a faint perspective grid; the original environment cubemap contributes only a small amount of reflection lighting. The Diffuse Color folder still controls color and optical density.
+
 ## Physics and limits
 
 The slider changes the symmetric velocity-gradient viscous stress in `p2g_2.wgsl`. Sparse droplets exposed an instability in the explicit affine update: its symmetric mode is multiplied by `1 - 8 * viscosity * dt / density`. Bounding viscosity times timestep alone misses low-density particles, allowing a small stir to create growing motion.
@@ -32,7 +34,7 @@ Pointer entry/reentry no longer creates an impulse from an invalid previous coor
 
 The upstream engine advances time per rendered frame. Lower rendering frame rates therefore still slow wall-clock progress; this experiment does not introduce a wall-clock scheduler. More substeps also introduce additional transfer dissipation. Precise material calibration requires convergence comparisons beyond this exploratory pass.
 
-This is viscous liquid, not a yield-stress clay model, elasticity, surface adhesion, or stringy slime. The original transparent water rendering is retained so material appearance does not disguise the motion comparison.
+This remains a viscous-liquid simulation with clay-like shading, not a yield-stress clay model, elasticity, surface adhesion, or stringy slime. Changing the visual appearance does not change viscosity, collision, or pointer forces.
 
 ## Verification
 

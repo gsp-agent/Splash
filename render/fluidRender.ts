@@ -449,9 +449,7 @@ export class FluidRenderer {
             label: 'bgColor bind group', 
             layout: this.bgColorPipeline.getBindGroupLayout(0),  
             entries: [
-                { binding: 0, resource: cubemapTextureView },
-                { binding: 1, resource: { buffer: renderUniformBuffer }},
-                { binding: 2, resource: sampler }, 
+                { binding: 0, resource: { buffer: renderUniformBuffer }},
             ]
         })
 

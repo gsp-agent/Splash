@@ -66,11 +66,11 @@ function initGui(particleCountTexts: string[]) {
 		thick: () => { params.viscosity = 4.0; },
 		sigma: 1.3,
 		running: true,
-		r: 140, 
-		g:220, 
-		b:240,  
+		r: 190,
+		g: 151,
+		b: 114,
 		speed: 0.8, 
-		colorDensity: 0.7, 
+		colorDensity: 2.4,
 		numParticles: particleCountTexts[1], 
 		toggleSimulation: () => {
 			params.running = !params.running;
@@ -94,6 +94,7 @@ function initGui(particleCountTexts: string[]) {
 	colorFolder.add(params, 'b', 0, 255, 1).name('B')
 	colorFolder.add(params, 'colorDensity', 0.0, 6.0, 0.1).name('Density')
 	colorFolder.close();
+	if (window.matchMedia('(max-width: 640px)').matches) gui.close();
 
 	document.addEventListener('keydown', (event) => {
 		if (event.code === 'KeyP') { 
@@ -381,4 +382,3 @@ async function main() {
 }
 
 main()
-

@@ -1,6 +1,4 @@
-@group(0) @binding(0) var envmapTexture: texture_cube<f32>;
-@group(0) @binding(1) var<uniform> uniforms: RenderUniforms;
-@group(0) @binding(2) var textureSampler: sampler;
+@group(0) @binding(0) var<uniform> uniforms: RenderUniforms;
 
 struct RenderUniforms {
     texelSize: vec2f, 
@@ -30,39 +28,21 @@ fn getCameraPosition() -> vec3f {
     return (uniforms.invViewMatrix * vec4(0, 0, 0, 1)).xyz;
 }
 
-fn rayPlaneIntersection(rayOrigin: vec3f, rayDir: vec3f) -> vec3f {
-    // if (abs(rayDir.y) < 1e-6) {
-    //     return vec3(0.0); // 交差しない場合
-    // }
-
-    let t = -rayOrigin.y / rayDir.y;
-    return rayOrigin + t * rayDir;
-}
-
 @fragment
 fn fs(input: FragmentInput) -> @location(0) vec4f {
     let cameraPos = getCameraPosition();
-    let rayDirWorld = normalize((uniforms.invViewMatrix * vec4f(computeViewPosFromUVDepth(input.uv, 1.0), 0.)).xyz); // depth は適当
-    let bgColor = textureSampleLevel(envmapTexture, textureSampler, rayDirWorld, 0.).rgb;
-    if (abs(rayDirWorld.y) < 1e-6) { // y = 0 と交差しない
-        return vec4f(bgColor, 1.);
-    } 
+    let rayDirWorld = normalize((uniforms.invViewMatrix * vec4f(computeViewPosFromUVDepth(input.uv, 1.0), 0.)).xyz);
+    let vignette = smoothstep(0.15, 0.85, length((input.uv - vec2f(0.5, 0.38)) * vec2f(1.0, 0.8)));
+    let studioColor = vec3f(mix(0.88, 0.73, 0.55 * input.uv.y + 0.45 * vignette));
 
-    let t = -cameraPos.y / rayDirWorld.y;
-    if (t < 0) {
-        return vec4f(bgColor, 1.);
-    }
+    // The cubemap lights the clay only; the visible studio stays neutral gray.
+    let t = -cameraPos.y / min(rayDirWorld.y, -1e-6);
     let rayHitPos = cameraPos + t * rayDirWorld;
     let gridSize = 16.0;
-    let lineThickness = 0.2; 
-
-    let isLineX = abs(fract(rayHitPos.x / gridSize - 0.5) - 0.5) < lineThickness / gridSize;
-    let isLineZ = abs(fract(rayHitPos.z / gridSize - 0.5) - 0.5) < lineThickness / gridSize;
-    let isLine = isLineX || isLineZ;
-
-    let boardColor = vec3(0.6); 
-    let lineColor = vec3(0.5); 
-    var finalColor = select(boardColor, lineColor, isLine);
-    finalColor = select(bgColor, finalColor, abs(rayHitPos.x) < 3e2 && abs(rayHitPos.z) < 3e2);
-    return vec4f(finalColor, 1.);
+    let gridDistance = abs(fract(rayHitPos.xz / gridSize - 0.5) - 0.5) * gridSize;
+    let lineWidth = max(fwidth(rayHitPos.xz), vec2f(0.08));
+    let gridLines = vec2f(1.0) - smoothstep(vec2f(0.08), vec2f(0.08) + lineWidth, gridDistance);
+    let floorFade = (1.0 - smoothstep(80.0, 220.0, t)) * smoothstep(0.0, 0.1, -rayDirWorld.y);
+    let grid = max(gridLines.x, gridLines.y) * floorFade;
+    return vec4f(studioColor - vec3f(0.055 * grid), 1.0);
 }
