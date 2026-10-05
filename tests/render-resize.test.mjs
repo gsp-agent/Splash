@@ -24,6 +24,7 @@ const { outputFiles } = await build({
 
 async function fixture() {
     const frames = [], textures = [], buffers = [], pipelines = [], writes = [], passes = [];
+    const fetches = [], uploads = [], bitmaps = [];
     const canvas = { clientWidth: 390, clientHeight: 844, addEventListener() {} };
     for (const dimension of ['width', 'height']) {
         let value = 0;
@@ -75,7 +76,7 @@ async function fixture() {
                     floats: data.byteLength <= 272 ? Array.from(new Float32Array(bytes, data.byteOffset ?? 0, data.byteLength / 4)) : [],
                 });
             },
-            copyExternalImageToTexture() {}, submit() {},
+            copyExternalImageToTexture(source, destination, size) { uploads.push({ source, destination, size }); }, submit() {},
         },
         createTexture(descriptor) { const result = texture(descriptor); textures.push(result); return result; },
         createBuffer(descriptor) {
@@ -106,19 +107,26 @@ async function fixture() {
         navigator: { gpu: { requestAdapter: async () => ({ requestDevice: async () => device }), getPreferredCanvasFormat: () => 'bgra8unorm' } },
         document: { querySelector: () => canvas, getElementById: id => elements[id], addEventListener() {} },
         window: { matchMedia: () => ({ matches: true }) },
-        fetch: async () => ({ blob: async () => ({}) }), createImageBitmap: async () => ({ width: 8, height: 8 }),
+        fetch: async src => { fetches.push(src); return { ok: true, blob: async () => ({ src }) }; },
+        createImageBitmap: async blob => {
+            const poster = blob.src === 'clayface-poster.jpg';
+            const bitmap = { width: poster ? 2000 : 8, height: poster ? 3000 : 8,
+                closeCount: 0, close() { this.closeCount++; },
+            };
+            bitmaps.push(bitmap); return bitmap;
+        },
         requestAnimationFrame: callback => frames.push(callback),
         GPUTextureUsage: { RENDER_ATTACHMENT: 1, TEXTURE_BINDING: 2, COPY_DST: 4 },
         GPUBufferUsage: { STORAGE: 1, COPY_DST: 2, UNIFORM: 4, COPY_SRC: 8 }, GPUColorWrite: { RED: 1 },
         ArrayBuffer, Float32Array, Int32Array,
     });
     vm.runInContext(outputFiles[0].text, globals);
-    // main() waits for adapter and cubemap loading before scheduling its first frame.
-    for (let i = 0; !frames.length && i < 20; i++) await Promise.resolve();
+    // main() waits for adapter and background/environment assets before scheduling its first frame.
+    for (let i = 0; !frames.length && i < 40; i++) await Promise.resolve();
     assert.equal(frames.length, 1, 'initialization must schedule a frame');
     const frame = async () => { passes.length = 0; await frames.shift()(); };
     await frame();
-    return { canvas, device, globals, elements, frame, textures, buffers, pipelines, writes, passes };
+    return { canvas, device, globals, elements, frame, textures, buffers, pipelines, writes, passes, fetches, uploads, bitmaps };
 }
 
 test('portrait/landscape resize updates every render target and shader scale, preserves state and releases prior resources', async () => {
@@ -131,8 +139,9 @@ test('portrait/landscape resize updates every render target and shader scale, pr
     const particleWrites = () => app.writes.filter(write => write.buffer === particleBuffer).length;
     assert.equal(particleWrites(), 1, 'initial particle state is seeded once');
     const initialComputePipelines = app.pipelines.filter(pipeline => pipeline.descriptor.compute);
-    let priorTextures = app.textures.slice(1).filter(t => t.descriptor.dimension !== '3d'); // Keep cubemap and density grid.
-    let priorRenderBuffers = app.buffers.slice(-5);
+    const poster = app.textures.find(t => t.descriptor.label === 'Clayface poster texture');
+    let priorTextures = app.textures.slice(1).filter(t => t !== poster && t.descriptor.dimension !== '3d'); // Keep the poster, cubemap and density grid.
+    let priorRenderBuffers = app.buffers.slice(-6);
     for (const [width, height, particleMode] of [
         [844, 390, false], [390, 844, true], [1200, 800, false],
         [600, 400, true], [1, 1, false], [390, 844, true],
@@ -145,7 +154,7 @@ test('portrait/landscape resize updates every render target and shader scale, pr
         const renderHeight = Math.max(1, Math.floor(height * 0.7));
         assert.equal(app.canvas.width, renderWidth, 'drawing buffer must follow displayed width');
         assert.equal(app.canvas.height, renderHeight, 'drawing buffer must follow displayed height');
-        const activeTextures = app.textures.filter(t => !t.destroyed && t.descriptor.dimension !== '3d' && t.descriptor.size[2] !== 6);
+        const activeTextures = app.textures.filter(t => t !== poster && !t.destroyed && t.descriptor.dimension !== '3d' && t.descriptor.size[2] !== 6);
         assert.equal(activeTextures.length, 6, 'there must be exactly one current set of render targets');
         for (const texture of activeTextures) {
             const thickness = texture.descriptor.format === 'r16float';
@@ -191,10 +200,74 @@ test('portrait/landscape resize updates every render target and shader scale, pr
         assert.ok(priorTextures.every(t => t.destroyCount === 1), 'prior render textures must be released exactly once');
         assert.ok(priorRenderBuffers.every(b => b.destroyCount === 1), 'prior renderer uniform buffers must be released exactly once');
         priorTextures = activeTextures;
-        priorRenderBuffers = app.buffers.slice(-5);
+        priorRenderBuffers = app.buffers.slice(-6);
     }
     const counts = [app.textures.length, app.buffers.length, app.pipelines.length];
     await app.frame();
     assert.deepEqual([app.textures.length, app.buffers.length, app.pipelines.length], counts, 'unchanged dimensions must not reallocate');
     assert.ok(priorTextures.every(t => !t.destroyed));
+});
+
+test('poster stays centered and fully contained at the displayed aspect, including resizes within one drawing-buffer size', async () => {
+    const app = await fixture();
+    for (const [width, height, expectedScale] of [
+        [600, 900, [1, 1]],
+        [1200, 900, [0.5, 1]],
+        [300, 900, [1, 0.5]],
+        [844, 390, [130 / 422, 1]],
+        [390, 844, [1, 585 / 844]],
+        [1, 1, [2 / 3, 1]],
+        [1, 2, [1, 0.75]],
+    ]) {
+        app.canvas.clientWidth = width;
+        app.canvas.clientHeight = height;
+        await app.frame();
+        const background = app.passes.find(pass => pass.pipeline?.descriptor.label === 'bgColor pipeline');
+        assert.ok(background, 'the actual app must draw the poster through the background pass');
+        const scaleBinding = background.bindGroup.entries.find(entry => entry.binding === 0);
+        assert.ok(scaleBinding?.resource.buffer, 'the background must bind its current contain scale');
+        const write = app.writes.filter(write => write.buffer === scaleBinding.resource.buffer).at(-1);
+        assert.ok(write, 'the visible aspect must be written before rendering');
+        const scale = write.floats;
+        assert.equal(scale.length, 2);
+        scale.forEach((value, axis) => assert.ok(Math.abs(value - expectedScale[axis]) < 1e-7));
+        assert.ok(Math.abs(scale[0] * width / (scale[1] * height) - 2 / 3) < 1e-7,
+            'displayed poster dimensions must retain the original 2:3 proportions');
+        assert.ok(scale.every(value => value > 0 && value <= 1), 'the whole poster must fit inside the viewport');
+        assert.equal(Math.max(...scale), 1, 'contain fit must use all available space along one axis');
+    }
+});
+
+test('poster is uploaded once, survives every renderer replacement, and feeds the clay reveal texture', async () => {
+    const app = await fixture();
+    const poster = app.textures.find(t => t.descriptor.label === 'Clayface poster texture');
+    assert.ok(poster, 'the app must create the approved image texture');
+    assert.deepEqual(Array.from(poster.descriptor.size), [2000, 3000, 1]);
+    assert.equal(poster.descriptor.format, 'rgba8unorm', 'background values must keep their sRGB encoding through the unorm compositor');
+    const upload = app.uploads.find(upload => upload.destination.texture === poster);
+    assert.ok(upload, 'the decoded poster must actually be uploaded');
+    assert.deepEqual(Array.from(upload.size), [2000, 3000]);
+    assert.equal(upload.destination.colorSpace, 'srgb');
+    assert.equal(upload.source.source.closeCount, 1, 'release the decoded image after its upload');
+    assert.equal(app.fetches.filter(src => src === 'clayface-poster.jpg').length, 1);
+    for (const [width, height, particleMode] of [[844, 390, false], [390, 844, true], [1200, 800, false]]) {
+        app.canvas.clientWidth = width;
+        app.canvas.clientHeight = height;
+        app.elements.particle.checked = particleMode;
+        await app.frame();
+        const background = app.passes.find(pass => pass.pipeline?.descriptor.label === 'bgColor pipeline');
+        assert.ok(background);
+        assert.equal(background.bindGroup.entries.find(entry => entry.binding === 2)?.resource.texture, poster,
+            'every replacement renderer must reuse the original image');
+        const composite = app.passes.find(pass => pass.pipeline?.descriptor.label ===
+            (particleMode ? 'density raymarch pipeline' : 'fluid rendering pipeline'));
+        assert.ok(composite, 'the selected clay rendering path must still execute');
+        assert.equal(composite.bindGroup.entries.find(entry => entry.binding === 5)?.resource.texture,
+            background.descriptor.colorAttachments[0].view.texture,
+            'the fluid compositor must sample the rendered poster, allowing it through actual gaps');
+        assert.equal(poster.destroyCount, 0, 'a renderer owns its targets, not the shared poster');
+    }
+    assert.equal(app.textures.filter(t => t.descriptor.label === 'Clayface poster texture').length, 1);
+    assert.equal(app.uploads.filter(upload => upload.destination.texture === poster).length, 1);
+    assert.equal(app.fetches.filter(src => src === 'clayface-poster.jpg').length, 1);
 });

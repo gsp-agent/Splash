@@ -20,7 +20,7 @@ The Fluid thickness folder provides a live relative viscosity slider and three p
 
 These are exploratory names, not measured real-world viscosities. Select a preset, then Reset fluid to compare a fresh collapse and stir with the pointer. Reset resumes the simulation and restores the full container width. Presets leave color and simulation speed unchanged.
 
-The visual default is warm tan clay (RGB 190, 151, 114; color density 2.4), with diffuse scattering, soft satin highlights, and transmission limited to thin edges. The stacked Groove Jones SVG comes from the partner logo source folder. The visible studio uses a neutral gray gradient with a faint perspective grid; the original environment cubemap contributes only a small amount of reflection lighting. The Diffuse Color folder still controls color and optical density.
+The visual default is warm tan clay (RGB 190, 151, 114; color density 2.4), with diffuse scattering, soft satin highlights, and transmission limited to thin edges. The approved Clayface poster sits beneath the clay in the existing background pass, centered with its full portrait proportions preserved and black around the unused space. Stirring reveals the face and red title through gaps. The image is loaded once and shared across renderer replacements on resize. Encoded sRGB image values pass through the existing unorm background/compositing targets; the fluid shader decodes them only for transmission. The original environment cubemap still contributes a small amount of reflection lighting. The official white stacked Groove Jones SVG and dark backing keep the existing branding and controls legible over both the poster and clay. The Diffuse Color folder still controls color and optical density.
 
 ## Physics and limits
 
@@ -38,7 +38,7 @@ This remains a viscous-liquid simulation with clay-like shading, not a yield-str
 
 ## Verification
 
-`node --test tests/*.test.mjs` passes five tests covering timestep/impulse preservation and pointer entry, reentry, and render-scale independence. `npm run build` passes.
+`node --test tests/*.test.mjs` covers timestep/impulse preservation, pointer entry/reentry, top-down camera framing, responsive render targets, full-poster fit at the displayed aspect, and a single shared poster upload through resize and both rendering modes. These Node checks exercise the actual application lifecycle with mocked GPU calls; they do not execute WGSL. `npm run build` passes.
 
 `tests/gpu-kernels.mjs` dispatches the production WGSL directly in a WebGPU browser. All 33 checks pass: collision position and normal/tangential velocity, affine rows, inward grid release, gravity, no spring energy during box projection, and sparse affine relaxation at viscosity 0.1, 1, and 4. The same fixture against pre-fix commit `f4b9017` fails 25 checks, including all three sparse relaxation cases. Shader validation errors are zero in both runs.
 

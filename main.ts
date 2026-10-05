@@ -165,6 +165,26 @@ async function main() {
 	});
 	console.log("cubemap initialization done")
 
+	const posterResponse = await fetch('clayface-poster.jpg');
+	if (!posterResponse.ok) throw new Error(`Clayface poster could not be loaded (HTTP ${posterResponse.status})`);
+	const posterBitmap = await createImageBitmap(await posterResponse.blob());
+	const posterAspect = posterBitmap.width / posterBitmap.height;
+	// The compositor stores encoded background colors in unorm targets and decodes only transmission.
+	const posterTexture = device.createTexture({
+		label: 'Clayface poster texture',
+		size: [posterBitmap.width, posterBitmap.height, 1],
+		format: 'rgba8unorm',
+		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+	});
+	device.queue.copyExternalImageToTexture(
+		{ source: posterBitmap },
+		{ texture: posterTexture, colorSpace: 'srgb', premultipliedAlpha: false },
+		[posterBitmap.width, posterBitmap.height]
+	);
+	posterBitmap.close();
+	// This immutable image is shared by replacement renderers; resize only releases their own targets.
+	const posterTextureView = posterTexture.createView();
+
 
 	interface simulationParam {
 		particleCount: number, 
@@ -268,7 +288,7 @@ async function main() {
 	const createRenderer = () => new FluidRenderer(
 		renderUniformBuffer, posvelBuffer, densityGridSizeBuffer, initBoxSizeBuffer, 
 		device, 
-		depthMapTextureView, cubemapTextureView, densityGridTextureView, 
+		depthMapTextureView, cubemapTextureView, densityGridTextureView, posterTextureView, posterAspect,
 		canvas, 
 		presentationFormat, 
 		mlsmpmRadius, mlsmpmFov, fixedPointMultiplier

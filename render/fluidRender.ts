@@ -40,20 +40,26 @@ export class FluidRenderer {
     diffuseColorBuffer: GPUBuffer
     colorDensityBuffer: GPUBuffer
     densityGridSizeBuffer: GPUBuffer
+    posterScaleBuffer: GPUBuffer
 
     device: GPUDevice
+    private canvas: HTMLCanvasElement
+    private posterAspect: number
     private textures: GPUTexture[]
     private buffers: GPUBuffer[]
 
     constructor(
         renderUniformBuffer: GPUBuffer, posvelBuffer: GPUBuffer, densityGridSizeBuffer: GPUBuffer, initBoxSizeBuffer: GPUBuffer, 
         device: GPUDevice, 
-        depthMapTextureView: GPUTextureView, cubemapTextureView: GPUTextureView, densityGridTextureView: GPUTextureView, 
+        depthMapTextureView: GPUTextureView, cubemapTextureView: GPUTextureView, densityGridTextureView: GPUTextureView,
+        posterTextureView: GPUTextureView, posterAspect: number,
         canvas: HTMLCanvasElement, 
         presentationFormat: GPUTextureFormat,
         radius: number, fov: number, fixedPointMultiplier: number, 
     ) {
         this.device = device
+        this.canvas = canvas
+        this.posterAspect = posterAspect
         const maxFilterSize = 50
         const diameter = 2 * radius
         const blurFilterSize = 12
@@ -342,7 +348,12 @@ export class FluidRenderer {
             size: 4, 
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
-        this.buffers = [filterXUniformBuffer, filterYUniformBuffer, thicknessFilterSizeBuffer, this.diffuseColorBuffer, this.colorDensityBuffer];
+        this.posterScaleBuffer = device.createBuffer({
+            label: 'poster scale buffer',
+            size: 8,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        this.buffers = [filterXUniformBuffer, filterYUniformBuffer, thicknessFilterSizeBuffer, this.diffuseColorBuffer, this.colorDensityBuffer, this.posterScaleBuffer];
         this.densityGridSizeBuffer = densityGridSizeBuffer
         let filterXArray = new Float32Array([1., 0.])
         let filterYArray = new Float32Array([0., 1.])
@@ -453,7 +464,9 @@ export class FluidRenderer {
             label: 'bgColor bind group', 
             layout: this.bgColorPipeline.getBindGroupLayout(0),  
             entries: [
-                { binding: 0, resource: { buffer: renderUniformBuffer }},
+                { binding: 0, resource: { buffer: this.posterScaleBuffer }},
+                { binding: 1, resource: sampler },
+                { binding: 2, resource: posterTextureView },
             ]
         })
 
@@ -496,6 +509,12 @@ export class FluidRenderer {
         const colorDensityArray = new Float32Array([colorDensity])
         this.device.queue.writeBuffer(this.diffuseColorBuffer, 0, diffuseColorArray)
         this.device.queue.writeBuffer(this.colorDensityBuffer, 0, colorDensityArray)
+        // Use displayed dimensions: the drawing buffer is rounded and may not change on a tiny resize.
+        const viewportAspect = Math.max(1, this.canvas.clientWidth) / Math.max(1, this.canvas.clientHeight);
+        this.device.queue.writeBuffer(this.posterScaleBuffer, 0, new Float32Array([
+            Math.min(1, this.posterAspect / viewportAspect),
+            Math.min(1, viewportAspect / this.posterAspect),
+        ]));
 
         const depthFilterPassDescriptors: GPURenderPassDescriptor[] = [
             {
