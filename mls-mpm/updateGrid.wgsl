@@ -98,9 +98,11 @@ fn updateGrid(@builtin(global_invocation_id) id: vec3<u32>) {
             var x: i32 = i32(id.x) / i32(initBoxSize.z) / i32(initBoxSize.y);
             var y: i32 = (i32(id.x) / i32(initBoxSize.z)) % i32(initBoxSize.y);
             var z: i32 = i32(id.x) % i32(initBoxSize.z);
-            if (x < 2 || x > i32(ceil(realBoxSize.x) - 3)) { cells[id.x].vx = 0; } 
-            if (y < 2 || y > i32(ceil(realBoxSize.y) - 3)) { cells[id.x].vy = 0; }
-            if (z < 2 || z > i32(ceil(realBoxSize.z) - 3)) { cells[id.x].vz = 0; }
+            // Walls only stop flow leaving the box; inward flow and tangents
+            // (including gravity along a side wall) must remain free.
+            if ((x < 2 && cells[id.x].vx < 0) || (x > i32(ceil(realBoxSize.x) - 3) && cells[id.x].vx > 0)) { cells[id.x].vx = 0; }
+            if ((y < 2 && cells[id.x].vy < 0) || (y > i32(ceil(realBoxSize.y) - 3) && cells[id.x].vy > 0)) { cells[id.x].vy = 0; }
+            if ((z < 2 && cells[id.x].vz < 0) || (z > i32(ceil(realBoxSize.z) - 3) && cells[id.x].vz > 0)) { cells[id.x].vz = 0; }
         }
     }
 }

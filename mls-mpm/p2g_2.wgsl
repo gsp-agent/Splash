@@ -70,7 +70,13 @@ fn p2g_2(@builtin(global_invocation_id) id: vec3<u32>) {
         var stress: mat3x3f = mat3x3f(-pressure, 0, 0, 0, -pressure, 0, 0, 0, -pressure);
         let dudv: mat3x3f = particle.C;
         let strain: mat3x3f = dudv + transpose(dudv);
-        stress += dynamicViscosity * strain;
+        // The affine symmetric mode has relaxation rate 8*mu/rho (unit grid).
+        // Explicit stress reverses/amplifies that mode in sparse droplets when
+        // 8*mu*dt/rho > 2. Use a backward-Euler local relaxation coefficient;
+        // this approaches the original stress as dt -> 0, without a speed cap.
+        // This is a local constitutive approximation, not a global implicit solve.
+        let relaxedViscosity = dynamicViscosity / (1.0 + 8.0 * dynamicViscosity * dt / density);
+        stress += relaxedViscosity * strain;
 
         let eq_16_term0 = -volume * 4 * stress * dt;
 

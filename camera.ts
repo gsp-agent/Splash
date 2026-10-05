@@ -14,10 +14,11 @@ export class Camera {
     isDragging: boolean
     prevX: number
     prevY: number
-    prevHoverX: number
-    prevHoverY: number
-    currentHoverX: number
-    currentHoverY: number
+    prevHoverX = -1
+    prevHoverY = -1
+    currentHoverX = -1
+    currentHoverY = -1
+    pointerInside = false
     currentXtheta: number
     currentYtheta: number
     maxYTheta: number
@@ -51,8 +52,11 @@ export class Camera {
         })
 
         this.canvas.addEventListener("mousemove", (event: MouseEvent) => {
-            this.currentHoverX = event.clientX;
-            this.currentHoverY = event.clientY;
+            const rect = this.canvas.getBoundingClientRect();
+            this.currentHoverX = event.clientX - rect.left;
+            this.currentHoverY = event.clientY - rect.top;
+            if (!this.pointerInside) this.setNewPrevMouseCoord();
+            this.pointerInside = true;
             if (this.isDragging) {
                 const deltaX = this.prevX - event.clientX;
                 const deltaY = this.prevY - event.clientY;
@@ -69,10 +73,19 @@ export class Camera {
         this.canvas.addEventListener("mouseup", () => {
             if (this.isDragging) this.isDragging = false;
         });
+        this.canvas.addEventListener("mouseleave", () => {
+            this.pointerInside = false;
+            this.isDragging = false;
+            this.currentHoverX = this.currentHoverY = -1;
+            this.setNewPrevMouseCoord();
+        });
     }
 
     reset(initDistance: number, target: number[], fov: number, zoomRate: number) {
         this.isDragging = false
+        this.pointerInside = false
+        this.currentHoverX = this.currentHoverY = -1
+        this.setNewPrevMouseCoord()
         this.prevX = 0
         this.prevY = 0
         this.currentXtheta = -Math.PI / 2 * 1
@@ -116,7 +129,7 @@ export class Camera {
     }
 
     calcMouseVelocity() {
-        if (this.isDragging) {
+        if (this.isDragging || !this.pointerInside) {
             return [0, 0]
         }
 
@@ -141,13 +154,14 @@ export class Camera {
     }
 
     calcPlaneCoord(x: number, y: number) {
-        let normalizedX = x / this.canvas.width
-        let normalizedY = y / this.canvas.height
+        // MouseEvent coordinates are CSS pixels, not the downscaled render target.
+        let normalizedX = x / this.canvas.clientWidth
+        let normalizedY = y / this.canvas.clientHeight
         let ndcX = 2.0 * normalizedX - 1.0
         let ndcY = (1.0 - normalizedY) * 2.0 - 1.0
 
         let viewSpaceMouseRay = [
-            ndcX * Math.tan(this.fov / 2.0) * (this.canvas.width / this.canvas.height), 
+            ndcX * Math.tan(this.fov / 2.0) * (this.canvas.clientWidth / this.canvas.clientHeight),
             ndcY * Math.tan(this.fov / 2.0), 
             -1.0
         ]

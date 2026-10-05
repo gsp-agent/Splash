@@ -22,7 +22,13 @@ These are exploratory names, not measured real-world viscosities. Select a prese
 
 ## Physics and limits
 
-The slider changes the existing symmetric velocity-gradient viscous stress in `p2g_2.wgsl`. It does not add global velocity drag or alter the speed control. Explicit stress integration uses additional substeps as viscosity increases, keeping viscosity times substep duration at or below 0.12 in simulation units. This is a conservative exploration setting, not a general proof of numerical stability. Total simulated time and pointer impulse per rendered frame are preserved.
+The slider changes the symmetric velocity-gradient viscous stress in `p2g_2.wgsl`. Sparse droplets exposed an instability in the explicit affine update: its symmetric mode is multiplied by `1 - 8 * viscosity * dt / density`. Bounding viscosity times timestep alone misses low-density particles, allowing a small stir to create growing motion.
+
+The stress now uses `viscosity / (1 + 8 * viscosity * dt / density)`, giving that local mode a positive backward-Euler relaxation factor. This is a local constitutive approximation, not a full global implicit viscosity solve or a general stability proof. Existing viscosity substeps remain; total simulated time and pointer impulse per rendered frame are preserved. No global velocity drag or speed cap is added.
+
+Walls apply frictionless, inelastic collision projection. Only outward normal velocity and the collided affine velocity row are removed; tangential motion, inward release, and gravity along side walls remain free. The old timestep-independent wall spring is removed. The safe particle boundary is `[3, boxSize - 4]` in each axis. These walls provide collision, not adhesion.
+
+Pointer entry/reentry no longer creates an impulse from an invalid previous coordinate. Pointer projection uses the displayed canvas size, so changing render resolution does not change the force scale.
 
 The upstream engine advances time per rendered frame. Lower rendering frame rates therefore still slow wall-clock progress; this experiment does not introduce a wall-clock scheduler. More substeps also introduce additional transfer dissipation. Precise material calibration requires convergence comparisons beyond this exploratory pass.
 
@@ -30,10 +36,24 @@ This is viscous liquid, not a yield-stress clay model, elasticity, surface adhes
 
 ## Verification
 
-- Three Node tests check the original water step, preserved simulated time/pointer impulse, the timestep bound, and invalid-input handling.
-- Production build passes; shader compilation and rendering exercised in Ego Browser.
-- At 70,000 particles, viscosity 4, and speed 0.8, an interactive GPU readback found zero non-finite values in sampled active particle position, velocity, and affine matrices; no captured WebGPU errors. This is a bounded check, not a long-duration soak.
-- A short 30-frame browser sample at that setting measured median 33.4 ms and p95 49.9 ms between animation frames. This is whole-page timing, not isolated GPU timing or an installation performance guarantee.
-- No camera input or multi-display support added.
+`node --test tests/*.test.mjs` passes five tests covering timestep/impulse preservation and pointer entry, reentry, and render-scale independence. `npm run build` passes.
+
+`tests/gpu-kernels.mjs` dispatches the production WGSL directly in a WebGPU browser. All 33 checks pass: collision position and normal/tangential velocity, affine rows, inward grid release, gravity, no spring energy during box projection, and sparse affine relaxation at viscosity 0.1, 1, and 4. The same fixture against pre-fix commit `f4b9017` fails 25 checks, including all three sparse relaxation cases. Shader validation errors are zero in both runs.
+
+`tests/fluid-stability-probe.js` seeds the initial particles and reads all 70,000 active particles from the production GPU buffer. Each advance processes a complete animation callback batch, which contains one simulation frame and a GUI callback. Earlier single-callback probe counts were callback ticks, not simulation frames.
+
+At speed 0.8, each preset ran 300 initial frames, 45 small mouse-movement frames, 300 rest frames, 120 circular-stir frames, and 600 rest frames. After the circular stir, all particles returned to the bottom layer:
+
+| Viscosity | Mean squared speed, stir → rest | Highest particle Y, stir → rest | Particles above Y=20 after rest |
+| --- | --- | --- | --- |
+| 0.1 | 2.490 → 0.325 | 31.265 → 9.308 | 0 |
+| 1.0 | 2.469 → 0.109 | 13.111 → 8.443 | 0 |
+| 4.0 | 1.865 → 0.000435 | 12.516 → 8.153 | 0 |
+
+Thick additionally ran 120 side-stir frames and 900 rest frames. At speed 0.8, elevated particles fell from 924 to zero (including 393 near walls); highest Y fell from 31.270 to 8.074 and mean squared speed from 3.016 to 0.000346. Repeating from reset at maximum speed 1.0 reached the ceiling at Y=46 with 1,612 elevated particles; after 900 rest frames, all returned below Y=8.107 and mean squared speed fell from 2.867 to 0.0000341. No captured GPU errors or non-finite particle values occurred in these samples.
+
+These are bounded recovery tests on the local browser/GPU, not a long-duration soak or calibrated material measurements. Water and syrup retain more motion in the bottom layer; frictionless walls do not impose tangential drag.
+
+To repeat the kernel fixture from the Ego Browser Node runtime, import `runKernelRegressions` from `tests/gpu-kernels.mjs`, read `g2p.wgsl`, `updateGrid.wgsl`, `p2g_1.wgsl`, and `p2g_2.wgsl` into an object keyed by `g2p`, `updateGrid`, `p2g1`, and `p2g2`, then call `page.evaluate(runKernelRegressions, sources)` on the local WebGPU page. Install the recovery probe with `Page.addScriptToEvaluateOnNewDocument` and reload in the same browser invocation; use `__advance(n, motion)` and `__sample()`. Motion accepts `true` for the small path, `circle`, or `sides`. Keep advance batches under the browser evaluation timeout. Reload without instrumentation after testing to restore ordinary live animation.
 
 The upstream dependency audit findings remain. For this experiment serve the production output locally rather than exposing the upstream development server.

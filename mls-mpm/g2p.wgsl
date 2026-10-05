@@ -70,29 +70,22 @@ fn g2p(@builtin(global_invocation_id) id: vec3<u32>) {
         }
 
         particles[id.x].C = B * 4.0f;
-        particles[id.x].position += particles[id.x].v * dt;
-        particles[id.x].position = vec3f(
-            clamp(particles[id.x].position.x, 1., realBoxSize.x - 2.), 
-            clamp(particles[id.x].position.y, 1., realBoxSize.y - 2.), 
-            clamp(particles[id.x].position.z, 1., realBoxSize.z - 2.)
-        );
-
-        let center = vec3f(realBoxSize.x / 2, realBoxSize.y / 2, realBoxSize.z / 2);
-        let dist = center - particles[id.x].position;
-        let dirToOrigin = normalize(dist);
-        var rForce = vec3f(0);
-
-        
-        let k = 2.0;
-        let wallStiffness = 1.0;
-        let x_n: vec3f = particles[id.x].position + particles[id.x].v * dt * k;
+        let nextPosition = particles[id.x].position + particles[id.x].v * dt;
         let wallMin: vec3f = vec3f(3.);
         let wallMax: vec3f = realBoxSize - 4.;
-        if (x_n.x < wallMin.x) { particles[id.x].v.x += wallStiffness * (wallMin.x - x_n.x); }
-        if (x_n.x > wallMax.x) { particles[id.x].v.x += wallStiffness * (wallMax.x - x_n.x); }
-        if (x_n.y < wallMin.y) { particles[id.x].v.y += wallStiffness * (wallMin.y - x_n.y); }
-        if (x_n.y > wallMax.y) { particles[id.x].v.y += wallStiffness * (wallMax.y - x_n.y); }
-        if (x_n.z < wallMin.z) { particles[id.x].v.z += wallStiffness * (wallMin.z - x_n.z); }
-        if (x_n.z > wallMax.z) { particles[id.x].v.z += wallStiffness * (wallMax.z - x_n.z); }
+        particles[id.x].position = clamp(nextPosition, wallMin, wallMax);
+        for (var axis = 0; axis < 3; axis++) {
+            let hitMin = nextPosition[axis] < wallMin[axis] && particles[id.x].v[axis] < 0.;
+            let hitMax = nextPosition[axis] > wallMax[axis] && particles[id.x].v[axis] > 0.;
+            if (hitMin || hitMax) {
+                // Inelastic, frictionless contact: no wall spring or adhesion.
+                particles[id.x].v[axis] = 0.;
+                // APIC must not put the collided normal motion back on the grid.
+                // Matrices are column-major; remove just this velocity row.
+                particles[id.x].C[0][axis] = 0.;
+                particles[id.x].C[1][axis] = 0.;
+                particles[id.x].C[2][axis] = 0.;
+            }
+        }
     }
 }
